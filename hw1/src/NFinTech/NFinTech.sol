@@ -30,11 +30,11 @@ contract NFinTech is IERC721 {
 
     uint256 private _tokenId;
 
-    mapping(uint256 => address) private _owner;
-    mapping(address => uint256) private _balances;
-    mapping(uint256 => address) private _tokenApproval;
-    mapping(address => bool) private isClaim;
-    mapping(address => mapping(address => bool)) _operatorApproval;
+    mapping(uint256 => address) private _owner; // tokenId -> the owner of this token
+    mapping(address => uint256) private _balances;  // address -> total amount of tokens this address has
+    mapping(uint256 => address) private _tokenApproval; // 
+    mapping(address => bool) private isClaim;   // address -> whether this address has claimed token before
+    mapping(address => mapping(address => bool)) _operatorApproval; // (owner, operator) -> whether the operator has all access
 
     error ZeroAddress();
 
@@ -75,30 +75,67 @@ contract NFinTech is IERC721 {
     }
 
     function setApprovalForAll(address operator, bool approved) external {
-        // TODO: please add your implementaiton here
+        if (operator == address(0)) revert ZeroAddress();
+        _operatorApproval[msg.sender][operator] = approved;
+        emit ApprovalForAll(msg.sender, operator, approved);
     }
 
     function isApprovedForAll(address owner, address operator) public view returns (bool) {
-        // TODO: please add your implementaiton here
+        return _operatorApproval[owner][operator];
     }
 
     function approve(address to, uint256 tokenId) external {
-        // TODO: please add your implementaiton here
+        // check
+        bool can_approve = _owner[tokenId] == msg.sender || _operatorApproval[_owner[tokenId]][msg.sender];
+        if (!can_approve) revert();
+
+        _tokenApproval[tokenId] = to;
+        emit Approval(_owner[tokenId], to, tokenId);
     }
 
     function getApproved(uint256 tokenId) public view returns (address operator) {
-        // TODO: please add your implementaiton here
+        if (_owner[tokenId] == address(0)) revert();
+        
+        return _tokenApproval[tokenId];
     }
 
     function transferFrom(address from, address to, uint256 tokenId) public {
         // TODO: please add your implementaiton here
-    }
+        bool unless_cond = (msg.sender == _owner[tokenId])
+                        || (_operatorApproval[_owner[tokenId]][msg.sender])
+                        || (_tokenApproval[tokenId] == msg.sender);
+        if (!unless_cond) revert();
 
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata data) public {
-        // TODO: please add your implementaiton here
+        if (from != _owner[tokenId]) revert();
+        if (to == address(0)) revert();
+        if (_owner[tokenId] == address(0)) revert();
+
+        _balances[_owner[tokenId]] -= 1;
+        _balances[to] += 1;
+        _owner[tokenId] = to;
+        
+        emit Transfer(from, to, tokenId);
     }
 
     function safeTransferFrom(address from, address to, uint256 tokenId) public {
-        // TODO: please add your implementaiton here
+        _safeTransferFrom(from, to, tokenId, "");
     }
+
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata data) public {
+        _safeTransferFrom(from, to, tokenId, data);
+    }
+
+    function _safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public {
+        transferFrom(from, to, tokenId);
+
+        if (to.code.length == 0) return;
+        
+        try IERC721TokenReceiver(to).onERC721Received(msg.sender, from, tokenId, data) returns (bytes4 retval) {
+            if (retval != bytes4(keccak256("onERC721Received(address,address,uint256,bytes)")))
+                revert();
+        } catch {
+            revert();
+        }
+    }
+
 }
